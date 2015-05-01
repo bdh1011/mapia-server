@@ -5,7 +5,7 @@ from passlib.apps import custom_app_context as pwd_context
 
 from itsdangerous import (TimedJSONWebSignatureSerializer
                           as Serializer, BadSignature, SignatureExpired)
-from hello import db, app
+from Control import db, app
 import json, os
 
 
