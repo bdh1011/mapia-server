@@ -1,7 +1,16 @@
+# -*- coding: utf-8 -*-
+
 import os
-from flask import Flask, abort, request, jsonify, g, url_for
+from flask import Flask, abort, request, jsonify, g, url_for, session, escape
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext.httpauth import HTTPBasicAuth
+import redis
+import json
+import base64
+from functools import wraps
+import hashlib
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
 
 from werkzeug import secure_filename
 import Model
@@ -10,8 +19,9 @@ UPLOAD_FOLDER = './img/'
 ALLOWED_EXTENSIONS = set(['jpg','png'])
 
 # initialization
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'the quick brown fox jumps over the lazy dog'
+app.config['SECRET_KEY'] = 'mapia'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -20,7 +30,31 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 # extensions
 auth = HTTPBasicAuth()
 
+
+redis_connections = redis.Redis()
 db = SQLAlchemy(app)
+
+redis_username = []
+redis_password = []
+
+#temp decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        print request.headers
+        session_token = session.get('token')
+        if session_token is None:
+            return jsonify({ 'message': u'로그인해주세요.' }), 401
+
+        session_token = escape(session_token)
+        if redis_connections.get(session_token) is None:
+            return jsonify({ 'message': u'로그인해주세요.' }), 401
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+
 
 @auth.verify_password
 def verify_password(username_or_token, password):
@@ -54,6 +88,8 @@ def post_profile_pic():
         return jsonify({'profile_pic':'image return'})
 
 
+
+
 @app.route('/test',methods=['GET','POST'])
 def hello():
     print request.headers
@@ -67,17 +103,52 @@ def get_user(id):
         abort(400)
     return jsonify({'username': user.username})
 
-@app.route('/auth/login')
-@auth.login_required #change username to username
-def get_auth_token():
-    print request.json
-    token = g.user.generate_auth_token(360000)
-    return jsonify({'token': token.decode('ascii'), 'duration':360000})
+
+@app.route('/auth/login',methods=['POST','GET'])
+def login():
+    if request.method == 'POST':
+        encrypted_id = base64.b64decode(request.json['username'])
+        encrypted_password = base64.b64decode(request.json['password'])
+
+        session_key = base64.b64decode(escape(session['private_key']))
+        private_key = PKCS1_OAEP.new(RSA.importKey(session_key))
+
+        decrypted_id = private_key.decrypt(encrypted_id)
+        decrypted_password = private_key.decrypt(encrypted_password)
+
+        # decrypted_phone과 decrypted_password를 이미 DB에 저장된 값과 비교하여 확인한다.
+        # 사용자 정보로부터 사용자 구분지을 수 있는 hash 값을 생성한다.
+        # hash 값을 key로 하여 Redis에 사용자 정보를 저장한다.
+
+        uid = None
+        try:
+            uid = redis_username.index(decrypted_id)
+            if redis_password[uid] != decrypted_password:
+                raise ValueError('Could not find correct user!')
+        except:
+            print 'ID 또는 PW 불일치'
+            return jsonify({ 'message': u'아이디 또는 비밀번호가 틀렸습니다.' }), 401
+
+        user_hash = hashlib.sha1(str(uid)).hexdigest()
+        user_info = redis_username[uid]
+
+        redis_connections.set(user_hash, user_info)
+        session['token'] = user_hash
+
+        return jsonify({ 'message': u'로그인되었습니다.' }), 200
+
+    private_key = RSA.generate(1024)
+    public_key = private_key.publickey()
+
+    session['private_key'] = base64.b64encode(private_key.exportKey('DER'))
+    return jsonify({ 'public_key': base64.b64encode(public_key.exportKey('DER')) }), 200
+
+
 
 
 @app.route('/auth/signup/<username>')
 def check_duplicate_username(username):
-	if User.query.filter_by(username=username).first() is not None:
+	if Model.User.query.filter_by(username=username).first() is not None:
 		return jsonify({'exist':'true'})
 	else:
 		return jsonify({'exist':'false'})
@@ -85,26 +156,38 @@ def check_duplicate_username(username):
 
 @app.route('/auth/signup', methods=['POST'])
 def sign_up():
-    username = request.json.get('username')
-    password = request.json.get('password')
+    username = request.json['username']
+    password = request.json['password']
     print username, password
     if username is None or password is None:
-        return (jsonify({'code':'400','description':'missing arguments'}))
+        return jsonify({'message':'missing arguments'}), 400
     if Model.User.query.filter_by(username=username).first() is not None:
-        return (jsonify({'code':'400','description':'existing user'}))
+        return jsonify({'message':'existing user'}), 400
+
     user = Model.User(username=username)
     user.hash_password(password)
+
+    #Redis에 저장
+    redis_username.append(username)
+    redis_password.append(password)
+
     db.session.add(user)
     db.session.commit()
     g.user = user
-    token = g.user.generate_auth_token(360000)
-    return (jsonify({'code':'201','token':token }), 201)
+    return jsonify({ 'message': u'회원가입되었습니다.'}), 200
             # {'Location': url_for('get_user', id=user.username, _external=True)})
 
-@app.route('/users/self')
-@auth.login_required
-def get_user_self():
-	return jsonify({'username':g.user.username})
+
+#로그인 여부 확인
+@app.route('/auth/profile', methods=['GET'])
+@login_required
+def profile():
+    session_token = escape(session.get('token'))
+    user_info = redis_connections.get(session_token)
+    print user_info
+
+    return jsonify({'message': u'welcome '+user_info}), 200
+
 
 
 @app.route('/post', methods=['POST','GET'])
@@ -228,14 +311,6 @@ def facebook_post():
             post_list.append({'content':each_post.content,'fbid':each_post.fbid})
         print post_list
         return jsonify({'posts': post_list})
-
-
-
-@app.route('/users/resource')
-@auth.login_required
-def get_resource():
-    return jsonify({'data': 'Hello, %s!' % g.user.username})
-
 
 
 
