@@ -10,23 +10,21 @@ ALLOWED_EXTENSIONS = set(['jpg','png'])
 # initialization
 
 app = Flask(__name__)
-
-app.config['SECRET_KEY'] = 'mapia'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite'
-app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = True
+app.config.from_object('config.DevelopmentConfig')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
+
+if app.config['SQLALCHEMY_DATABASE_URI']==None:
+	print "need database config"
+	sys.exit(1)
  	
+
 # extensions
 auth = HTTPBasicAuth()
-
-
 db = SQLAlchemy(app)
 
 
 from app import control, models
 
-if not os.path.exists('db.sqlite'):
-    print 'create table'
-    db.create_all()
+db.create_all()
 

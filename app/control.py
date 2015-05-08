@@ -16,7 +16,7 @@ from werkzeug import secure_filename
 from app import auth
 from app import db
 from app import app
-from models import User, FacebookProfile, FacebookPost, Follow #, Group, GroupMember, GroupType, Post, Photo, 
+from models import User, FacebookProfile, FacebookPost, Follow, Post #, Group, GroupMember, GroupType, Post, Photo, 
 redis_username = []
 redis_password = []
 
@@ -98,6 +98,7 @@ def login():
         session_key = base64.b64decode(escape(session['private_key']))
         private_key = PKCS1_OAEP.new(RSA.importKey(session_key))
 
+        print encrypted_id
         decrypted_id = private_key.decrypt(encrypted_id)
         decrypted_password = private_key.decrypt(encrypted_password)
 
@@ -176,30 +177,32 @@ def profile():
 
 
 @app.route('/post', methods=['POST','GET'])
-@auth.login_required
+@login_required
 def post():
     if request.method == 'POST':
-        posts = request.json.get('posts')
-        for each_post in posts:
-            content = each_post['content']
-            lat = each_post['lat']
-            lng = each_post['lng']
-            # tags = each_post['tags']
-            # to = each_post['to']
-
-            user = User.query.filter_by(username=g.user.username).first() 
-            db.session.add(user)
-            facebook_post = Post(user=user,content=content, lat=lat, lng=lng)
-            db.session.add(facebook_post)
+        print request.json
+        
+        session_token = escape(session.get('token'))
+        username = redis_connections.get(session_token)
+        content = request.json['content']
+        lat = request.json['lat']
+        lng = request.json['lng']
+         
+        user = User.query.filter_by(username=username).first() 
+        db.session.add(user)
+        facebook_post = Post(user=user,content=content, lat=lat, lng=lng)
+        db.session.add(facebook_post)
 
         db.session.commit()
         db.session.flush()
-        return (jsonify({'code':'201','desciption':'success'}))
+        return jsonify({'message':u'upload posting Successfully!'}),200
     else:
-        posts = Post.query.filter_by(username=g.user.username).all()
+        session_token = escape(session.get('token'))
+        username = redis_connections.get(session_token)
+        posts = Post.query.filter_by(username=username).all()
         post_list = []
         for each_post in posts:
-            post_list.append({'id':each_post.id,'username':each_post.username,'content':each_post.content,'lat':each_post.lat,'lng':each_post.lng})
+            post_list.append({'id':each_post.id,'username':each_post.username,'content':each_post.content,'lat':each_post.lat,'lng':each_post.lng,'timestamp':each_post.timestamp})
         print post_list
         return jsonify({'posts': post_list})
 

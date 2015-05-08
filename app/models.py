@@ -5,7 +5,9 @@ from passlib.apps import custom_app_context as pwd_context
 
 from itsdangerous import (TimedJSONWebSignatureSerializer
                           as Serializer, BadSignature, SignatureExpired)
-import json, os
+from sqlalchemy.dialects.postgresql import JSON
+
+import json, os, uuid
 from app import db
 from app import app
 
@@ -21,30 +23,30 @@ class Json(db.TypeDecorator):
     def process_result_value(self, value, dialect):
         return json.loads(value)
 
-class Location(db.TypeDecorator):
-    impl = db.String
-    lat = db.Integer
-    lng = db.Integer
-
-
 
 class User(db.Model):
     __tablename__ = 'user'
     username = db.Column(db.String(64), primary_key=True)
-    password_hash = db.Column(db.String(64))
-    profile_pic_filename = db.Column(db.String(64))
+    password_hash = db.Column(db.String(256))
+    profile_pic_filename = db.Column(db.String(128))
     register_timestamp = db.Column(db.DateTime, default=db.func.now())
     update_timestamp = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
 
 
 
-    facebook_token = db.Column(db.String(64))
-    instagram_token = db.Column(db.String(64))
-    twitter_token = db.Column(db.String(64))
-    foursquare_token = db.Column(db.String(64))
-    google_token = db.Column(db.String(64))
+    facebook_token = db.Column(db.String(64), nullable=True)
+    instagram_token = db.Column(db.String(64), nullable=True)
+    twitter_token = db.Column(db.String(64), nullable=True)
+    foursquare_token = db.Column(db.String(64), nullable=True)
+    google_token = db.Column(db.String(64), nullable=True)
+
+    facebook_profile = db.relationship('FacebookProfile', backref='user',
+                                lazy='dynamic')
 
     facebook_post = db.relationship('FacebookPost', backref='user',
+                                lazy='dynamic')
+
+    group_member = db.relationship('GroupMember', backref='user',
                                 lazy='dynamic')
 
     post = db.relationship('Post', backref='user',
@@ -93,7 +95,6 @@ class FacebookProfile(db.Model):
     email = db.Column(db.String(128))
     gender = db.Column(db.String(64))
     link = db.Column(db.String(128)) #link to the person's Timeline
-    location = db.Column(db.String(128)) #person's current location as entered by them
     name = db.Column(db.String(128)) #the person's full name
     timezone = db.Column(db.String(128)) #the person's current timezone
     updated_time = db.Column(db.String(128)) 
@@ -123,12 +124,14 @@ class Group(db.Model):
     register_timestamp = db.Column(db.DateTime, default=db.func.now())    
     group_type = db.Column(db.String(64), db.ForeignKey('grouptype.typename'))
     privacy = db.Column(db.String(64))
+    group_member = db.relationship('GroupMember', backref='group',
+                                lazy='dynamic')
 
 
 class GroupMember(db.Model):
     __tablename__ = 'groupmember'
-    groupname = db.Column(db.Integer, db.ForeignKey('group.id'), primary_key=True)
-    member = db.Column(db.Integer, db.ForeignKey('user.username'))
+    groupid = db.Column(db.Integer, db.ForeignKey('group.id'), primary_key=True)
+    member = db.Column(db.String(64), db.ForeignKey('user.username'))
     job = db.Column(db.String(64))
     #member : member of the group
     #manager : manager of the group
@@ -138,18 +141,27 @@ class GroupType(db.Model):
     __tablename__ = "grouptype"
     typename = db.Column(db.String(64), primary_key=True)
     abouttype = db.Column(db.String(256))
+    group = db.relationship('Group', backref='group',
+                                lazy='dynamic')
+
 
 
 class Post(db.Model):
     __tablename__ = 'post'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.Integer, db.ForeignKey('user.username'))
+    username = db.Column(db.String(64), db.ForeignKey('user.username'))
     timestamp  = db.Column(db.DateTime, default=db.func.now())
     content = db.Column(db.String(512))
     lat = db.Column(db.Integer)
     lng = db.Column(db.Integer)
 
     comment = db.relationship('Comment', backref='post',
+                                lazy='dynamic')
+
+    movie = db.relationship('Movie', backref='post',
+                                lazy='dynamic')
+
+    photo = db.relationship('Photo', backref='post',
                                 lazy='dynamic')
 
     # location = db.Column(Location(64))
@@ -160,7 +172,8 @@ class Photo(db.Model):
     __tablename__ = 'photo'
     id = db.Column(db.Integer, primary_key=True)
     postid = db.Column(db.Integer, db.ForeignKey('post.id'), index=True)
-    location = db.Column(Location(64))
+    lat = db.Column(db.Integer)
+    lng = db.Column(db.Integer)
     tag = db.Column(Json(256))
     content = db.Column(db.String(512))
     timestamp  = db.Column(db.DateTime)
@@ -171,7 +184,8 @@ class Movie(db.Model):
     __tablename__ = 'movie'
     id = db.Column(db.Integer, primary_key=True)
     postid = db.Column(db.Integer, db.ForeignKey('post.id'), index=True)
-    location = db.Column(Location(64))
+    lat = db.Column(db.Integer)
+    lng = db.Column(db.Integer)
     tag = db.Column(Json(256))
     content = db.Column(db.String(512))
     timestamp  = db.Column(db.DateTime)
@@ -183,7 +197,7 @@ class Comment(db.Model):
     __tablename__ = 'comment'
     id = db.Column(db.Integer, primary_key=True)
     postid = db.Column(db.Integer,  db.ForeignKey('post.id'), index=True)
-    username = db.Column(db.Integer, db.ForeignKey('user.username'))
+    username = db.Column(db.String(64), db.ForeignKey('user.username'))
     tag = db.Column(Json(256))
     content = db.Column(db.String(512))
     timestamp  = db.Column(db.DateTime, default=db.func.now())
@@ -202,7 +216,8 @@ class Event(db.Model):
 class Place(db.Model):
     __tablename__ = 'place'
     id = db.Column(db.Integer, primary_key=True)
-    location = db.Column(Location(64))
+    lat = db.Column(db.Integer)
+    lng = db.Column(db.Integer)
     name = db.Column(db.String(128))
     description = db.Column(db.String(256))
 
