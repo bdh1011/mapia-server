@@ -111,6 +111,8 @@ class FacebookPost(db.Model):
     content = db.Column(db.String(512))
 
 
+
+
 class Follow(db.Model):
     __tablename__ = "follow"
     follow_from = db.Column(db.String(64), db.ForeignKey('user.username'), primary_key=True)
@@ -125,6 +127,10 @@ class Group(db.Model):
     group_type = db.Column(db.String(64), db.ForeignKey('grouptype.typename'))
     privacy = db.Column(db.String(64))
     group_member = db.relationship('GroupMember', backref='group',
+                                lazy='dynamic')
+
+
+    group_post = db.relationship('Post', backref='post_group',
                                 lazy='dynamic')
 
 
@@ -148,12 +154,18 @@ class GroupType(db.Model):
 
 class Post(db.Model):
     __tablename__ = 'post'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer,autoincrement=True, primary_key=True)
     username = db.Column(db.String(64), db.ForeignKey('user.username'))
     timestamp  = db.Column(db.DateTime, default=db.func.now())
     content = db.Column(db.String(512))
-    lat = db.Column(db.Integer)
-    lng = db.Column(db.Integer)
+    lat = db.Column(db.Float)
+    lng = db.Column(db.Float)
+
+    group = db.Column(db.String(64), db.ForeignKey('group.name'))
+    # location = db.Column(Location(64))
+    tag = db.Column(Json(128))
+    to = db.Column(db.String(64)) #공유 대상 Json 형식 , Foreign Key 로
+
 
     comment = db.relationship('Comment', backref='post',
                                 lazy='dynamic')
@@ -163,20 +175,12 @@ class Post(db.Model):
 
     photo = db.relationship('Photo', backref='post',
                                 lazy='dynamic')
-
-    # location = db.Column(Location(64))
-    tag = db.Column(Json(128))
-    to = db.Column(Json(128)) #공유 대상 Json 형식 , Foreign Key 로
-
 class Photo(db.Model):
     __tablename__ = 'photo'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, autoincrement=True,primary_key=True)
     postid = db.Column(db.Integer, db.ForeignKey('post.id'), index=True)
-    lat = db.Column(db.Integer)
-    lng = db.Column(db.Integer)
     tag = db.Column(Json(256))
-    content = db.Column(db.String(512))
-    timestamp  = db.Column(db.DateTime)
+    timestamp  = db.Column(db.DateTime, default=db.func.now())
     filename = db.Column(db.String(64)) 
 
 
@@ -184,8 +188,8 @@ class Movie(db.Model):
     __tablename__ = 'movie'
     id = db.Column(db.Integer, primary_key=True)
     postid = db.Column(db.Integer, db.ForeignKey('post.id'), index=True)
-    lat = db.Column(db.Integer)
-    lng = db.Column(db.Integer)
+    lat = db.Column(db.Float)
+    lng = db.Column(db.Float)
     tag = db.Column(Json(256))
     content = db.Column(db.String(512))
     timestamp  = db.Column(db.DateTime)
@@ -216,8 +220,8 @@ class Event(db.Model):
 class Place(db.Model):
     __tablename__ = 'place'
     id = db.Column(db.Integer, primary_key=True)
-    lat = db.Column(db.Integer)
-    lng = db.Column(db.Integer)
+    lat = db.Column(db.Float)
+    lng = db.Column(db.Float)
     name = db.Column(db.String(128))
     description = db.Column(db.String(256))
 

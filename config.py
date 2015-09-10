@@ -6,7 +6,8 @@ class Config(object):
     CSRF_ENABLED = True
     SECRET_KEY = 'this-really-needs-to-be-changed'
     SQLALCHEMY_DATABASE_URI = 'postgresql://mapia:realmapia@mapiadb.crtjr2nnqaxl.ap-northeast-1.rds.amazonaws.com:5432/mapia' 
-
+    UPLOAD_FOLDER = 'uploads/'
+    ALLOWED_EXTENSIONS = set(['png','jpg','jpeg','gif'])
 
 class ProductionConfig(Config):
     DEBUG = False
